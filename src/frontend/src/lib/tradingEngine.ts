@@ -1,3 +1,4 @@
+import { getLivePrice } from "./livePrice";
 // ============================================================
 // AuTrader — Core Algorithmic Trading Engine
 // XAUUSD (Gold) Multi-Strategy Confluence System
@@ -115,14 +116,18 @@ const TF_VOL: Record<string, number> = {
 };
 
 // ─── Candle Generation ────────────────────────────────────────
-export function generateCandles(timeframe: string, count = 300): Candle[] {
+export function generateCandles(
+  timeframe: string,
+  count = 300,
+  anchorPrice?: number,
+): Candle[] {
   const interval = TF_SECONDS[timeframe] ?? 3600;
   const vol = TF_VOL[timeframe] ?? 0.005;
   const now = Math.floor(Date.now() / 1000);
   const startTime = now - interval * count;
 
   const candles: Candle[] = [];
-  let price = 2648 + (Math.random() - 0.5) * 30;
+  let price = getLivePrice() + (Math.random() - 0.5) * 30;
 
   // Seeded pseudo-random for reproducibility per timeframe
   let seed = interval;
@@ -158,6 +163,17 @@ export function generateCandles(timeframe: string, count = 300): Candle[] {
       volume: Math.round(volume),
     });
     price = close;
+  }
+  if (anchorPrice !== undefined && candles.length > 0) {
+    const lastClose = candles[candles.length - 1].close;
+    const shift = anchorPrice - lastClose;
+    return candles.map((c) => ({
+      ...c,
+      open: +(c.open + shift).toFixed(2),
+      high: +(c.high + shift).toFixed(2),
+      low: +(c.low + shift).toFixed(2),
+      close: +(c.close + shift).toFixed(2),
+    }));
   }
   return candles;
 }
@@ -765,7 +781,7 @@ export function generateSignal(
 ): SignalResult | null {
   if (isNewsTime()) return null;
 
-  const candles = generateCandles(timeframe, 300);
+  const candles = generateCandles(timeframe, 300, getLivePrice());
   const indicators = computeIndicators(candles);
   const filter =
     STRATEGY_FILTERS[strategy] ?? STRATEGY_FILTERS["Full-Confluence"];

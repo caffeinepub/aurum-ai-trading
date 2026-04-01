@@ -14,6 +14,12 @@ import {
   useUpdateSignalStatus,
 } from "@/hooks/useQueries";
 import {
+  fetchRealPrice,
+  getLivePrice,
+  setLivePrice,
+  tickLivePrice,
+} from "@/lib/livePrice";
+import {
   type Candle,
   type ICTAnalysis,
   type Indicators,
@@ -75,12 +81,12 @@ export function Dashboard() {
     useState<TradingSignal | null>(null);
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentPrice, setCurrentPrice] = useState(2648.5);
+  const [currentPrice, setCurrentPrice] = useState(getLivePrice);
   const [priceChange, setPriceChange] = useState(0);
 
   const activeSignalsQ = useActiveSignals();
   const tradeHistoryQ = useTradeHistory();
-  const priceCacheQ = usePriceCache();
+  const _priceCacheQ = usePriceCache();
   const createSignal = useCreateSignal();
   const updateStatus = useUpdateSignalStatus();
   const addTrade = useAddTradeResult();
@@ -91,7 +97,7 @@ export function Dashboard() {
 
   // Load candles when timeframe changes
   const loadCandles = useCallback(() => {
-    const cs = generateCandles(selectedTimeframe, 300);
+    const cs = generateCandles(selectedTimeframe, 300, getLivePrice());
     const ind = computeIndicators(cs);
     const smc = detectSMC(cs);
     const ict = detectICT(cs);
@@ -117,12 +123,12 @@ export function Dashboard() {
         if (prev.length === 0) return prev;
         const copy = [...prev];
         const last = { ...copy[copy.length - 1] };
-        const tick = (Math.random() - 0.498) * 0.8;
-        last.close = +(last.close + tick).toFixed(2);
+        const newPrice = tickLivePrice();
+        last.close = newPrice;
         last.high = Math.max(last.high, last.close);
         last.low = Math.min(last.low, last.close);
         copy[copy.length - 1] = last;
-        setCurrentPrice(last.close);
+        setCurrentPrice(newPrice);
         setPriceChange(
           last.close - (copy[copy.length - 2]?.close ?? last.close),
         );
@@ -141,12 +147,18 @@ export function Dashboard() {
     }
   }, [activeSignalsQ.data]);
 
-  // Get price from cache
+  // Fetch real XAUUSD price on mount and every 15 seconds
   useEffect(() => {
-    if (priceCacheQ.data) {
-      setCurrentPrice(priceCacheQ.data.price);
-    }
-  }, [priceCacheQ.data]);
+    const doFetch = async () => {
+      await fetchRealPrice();
+      const p = getLivePrice();
+      setCurrentPrice(p);
+      loadCandles();
+    };
+    doFetch();
+    const id = setInterval(doFetch, 15000);
+    return () => clearInterval(id);
+  }, [loadCandles]);
 
   const handleGenerateSignal = useCallback(async () => {
     setIsGenerating(true);
